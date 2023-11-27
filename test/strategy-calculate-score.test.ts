@@ -1,51 +1,43 @@
-import { calculateScore } from '../src/strategies/plearn';
+import { transformResults } from '../src/strategies/plearn';
+import { BigNumber } from '@ethersproject/bignumber';
 
-describe('calculateScore', () => {
-  it('should return correct scores for given resultsDict and poolAddresses', () => {
-    // Setup
-    const resultsDict = {
-      '0xAddress1': [
-        { amount: '100000000000000000000' },
-        { amount: '200000000000000000000' }
-      ],
-      '0xAddress2': [
-        { amount: '150000000000000000000' },
-        { amount: '250000000000000000000' }
-      ]
-    };
-    const poolAddresses = [
-      { address: '0xPool1', decimals: 18 },
-      { address: '0xPool2', decimals: 18 }
+describe('transformResults', () => {
+  it('should correctly aggregate balances from different pools for each address', () => {
+    // Mock data
+    const resultsArray = [
+      { amount: BigNumber.from('100000000000000000000') }, // Address 1, Pool 1
+      { amount: BigNumber.from('200000000000000000000') }, // Address 2, Pool 1
+      { amount: BigNumber.from('150000000000000000000') }, // Address 1, Pool 2
+      { amount: BigNumber.from('250000000000000000000') } // Address 2, Pool 2
     ];
-
-    const balanceKey = 'amount'; // The key in result objects that holds the balance
-    const decimals = poolAddresses.map((pool) => pool.decimals); // Extracting decimals from poolAddresses
+    const addresses = ['0xAddress1', '0xAddress2'];
+    const balanceKey = 'amount';
+    const decimals = 18;
 
     // Act
-    const scores = calculateScore(
-      resultsDict,
-      poolAddresses,
+    const scores = transformResults(
+      resultsArray,
+      addresses,
       balanceKey,
       decimals
     );
 
     // Assert
-    expect(scores['0xAddress1']).toEqual(300); // 100 + 200
-    expect(scores['0xAddress2']).toEqual(400); // 150 + 250
+    expect(scores['0xAddress1']).toEqual(250); // 100 (Pool 1) + 150 (Pool 2)
+    expect(scores['0xAddress2']).toEqual(450); // 200 (Pool 1) + 250 (Pool 2)
   });
 
-  it('should handle empty results correctly', () => {
-    // Setup
-    const resultsDict = {};
-    const poolAddresses = [];
-
-    const balanceKey = 'amount'; // The key in result objects that holds the balance
-    const decimals = poolAddresses.map((pool) => 18); // Extracting decimals from poolAddresses
+  it('should return an empty object when resultsArray is empty', () => {
+    // Mock data
+    const resultsArray = [];
+    const addresses = ['0xAddress1', '0xAddress2'];
+    const balanceKey = 'amount';
+    const decimals = 18;
 
     // Act
-    const scores = calculateScore(
-      resultsDict,
-      poolAddresses,
+    const scores = transformResults(
+      resultsArray,
+      addresses,
       balanceKey,
       decimals
     );
@@ -54,100 +46,28 @@ describe('calculateScore', () => {
     expect(scores).toEqual({});
   });
 
-  it('should handle null and undefined values in resultsDict', () => {
-    // Setup
-    const resultsDict = {
-      '0xAddress1': [null, undefined],
-      '0xAddress2': [{ amount: '150000000000000000000' }, null]
-    };
-    const poolAddresses = [
-      { address: '0xPool1', decimals: 18 },
-      { address: '0xPool2', decimals: 18 }
+  it('should correctly handle null and undefined values in resultsArray', () => {
+    // Mock data
+    const resultsArray = [
+      { amount: null }, // Address 1, Pool 1
+      { amount: undefined }, // Address 2, Pool 1
+      { amount: BigNumber.from('150000000000000000000') }, // Address 1, Pool 2
+      { amount: BigNumber.from('0') } // Address 2, Pool 2
     ];
-
-    const balanceKey = 'amount'; // The key in result objects that holds the balance
-    const decimals = poolAddresses.map((pool) => pool.decimals); // Extracting decimals from poolAddresses
+    const addresses = ['0xAddress1', '0xAddress2'];
+    const balanceKey = 'amount';
+    const decimals = 18;
 
     // Act
-    const scores = calculateScore(
-      resultsDict,
-      poolAddresses,
+    const scores = transformResults(
+      resultsArray,
+      addresses,
       balanceKey,
       decimals
     );
 
     // Assert
-    expect(scores['0xAddress1']).toEqual(0);
-    expect(scores['0xAddress2']).toEqual(150);
-  });
-
-  it('should handle zero balances correctly', () => {
-    const resultsDict = {
-      '0xAddress1': [{ amount: '0' }, { amount: '0' }]
-    };
-    const poolAddresses = [
-      { address: '0xPool1', decimals: 18 },
-      { address: '0xPool2', decimals: 18 }
-    ];
-    const scores = calculateScore(
-      resultsDict,
-      poolAddresses,
-      'amount',
-      poolAddresses.map((pool) => pool.decimals)
-    );
-
-    expect(scores['0xAddress1']).toEqual(0);
-  });
-
-  it('should handle multiple pools with different decimals', () => {
-    const resultsDict = {
-      '0xAddress1': [{ amount: '1000000000000000000' }, { amount: '2000000' }]
-    };
-    const poolAddresses = [
-      { address: '0xPool1', decimals: 18 },
-      { address: '0xPool2', decimals: 6 }
-    ];
-    const scores = calculateScore(
-      resultsDict,
-      poolAddresses,
-      'amount',
-      poolAddresses.map((pool) => pool.decimals)
-    );
-
-    expect(scores['0xAddress1']).toBeCloseTo(3); // 1 Ether + 2 of some other token
-  });
-
-  it('should handle very large numbers correctly', () => {
-    const resultsDict = {
-      '0xAddress1': [
-        { amount: '1000000000000000000000000' },
-        { amount: '2000000000000000000000000' }
-      ]
-    };
-    const poolAddresses = [
-      { address: '0xPool1', decimals: 18 },
-      { address: '0xPool2', decimals: 18 }
-    ];
-    const scores = calculateScore(
-      resultsDict,
-      poolAddresses,
-      'amount',
-      poolAddresses.map((pool) => pool.decimals)
-    );
-
-    expect(scores['0xAddress1']).toBeCloseTo(3000000); // Large number handling
-  });
-
-  it('should handle edge cases like empty resultsDict or poolAddresses', () => {
-    const resultsDict = {};
-    const poolAddresses = [];
-    const scores = calculateScore(
-      resultsDict,
-      poolAddresses,
-      'amount',
-      poolAddresses.map((pool) => 18)
-    );
-
-    expect(scores).toEqual({});
+    expect(scores['0xAddress1']).toEqual(150); // Only the valid amount is considered
+    expect(scores['0xAddress2']).toEqual(0); // Null and undefined values treated as zero
   });
 });
