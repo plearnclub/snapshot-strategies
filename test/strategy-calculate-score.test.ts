@@ -1,5 +1,6 @@
 import { transformResults } from '../src/strategies/plearn';
 import { BigNumber } from '@ethersproject/bignumber';
+import { formatUnits } from '@ethersproject/units';
 
 describe('transformResults', () => {
   it('should correctly aggregate balances from different pools for each address', () => {
@@ -11,15 +12,10 @@ describe('transformResults', () => {
       { amount: BigNumber.from('250000000000000000000') } // Address 2, Pool 2
     ];
     const addresses = ['0xAddress1', '0xAddress2'];
-    const balanceKey = 'amount';
-    const decimals = 18;
 
     // Act
-    const scores = transformResults(
-      resultsArray,
-      addresses,
-      balanceKey,
-      decimals
+    const scores = transformResults(resultsArray, addresses, (result) =>
+      parseFloat(formatUnits(result.amount.toString(), 18))
     );
 
     // Assert
@@ -31,15 +27,10 @@ describe('transformResults', () => {
     // Mock data
     const resultsArray = [];
     const addresses = ['0xAddress1', '0xAddress2'];
-    const balanceKey = 'amount';
-    const decimals = 18;
 
     // Act
-    const scores = transformResults(
-      resultsArray,
-      addresses,
-      balanceKey,
-      decimals
+    const scores = transformResults(resultsArray, addresses, (result) =>
+      parseFloat(formatUnits(result.amount.toString(), 18))
     );
 
     // Assert
@@ -55,16 +46,14 @@ describe('transformResults', () => {
       { amount: BigNumber.from('0') } // Address 2, Pool 2
     ];
     const addresses = ['0xAddress1', '0xAddress2'];
-    const balanceKey = 'amount';
-    const decimals = 18;
 
     // Act
-    const scores = transformResults(
-      resultsArray,
-      addresses,
-      balanceKey,
-      decimals
-    );
+    const scores = transformResults(resultsArray, addresses, (result) => {
+      if (result.amount === null || result.amount === undefined) {
+        return 0;
+      }
+      return parseFloat(formatUnits(result.amount.toString(), 18));
+    });
 
     // Assert
     expect(scores['0xAddress1']).toEqual(150); // Only the valid amount is considered
