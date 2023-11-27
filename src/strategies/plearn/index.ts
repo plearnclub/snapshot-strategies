@@ -1,3 +1,4 @@
+import { Provider } from '@ethersproject/providers';
 import { formatUnits } from '@ethersproject/units';
 import { multicall } from '../../utils';
 import { strategy as erc20BalanceOfStrategy } from '../erc20-balance-of';
@@ -17,38 +18,41 @@ const pendingWithdrawalabi = [
   'function lockedBalances(address user) view returns (uint256 total, uint256 unlockable, uint256 locked, tuple(uint256 amount, uint256 unlockTime)[] lockData)'
 ];
 
-export function calculateScore(
-  resultsDict,
-  poolAddresses,
-  balanceKey = 'amount',
-  decimals
-) {
-  return Object.keys(resultsDict).reduce((acc, address) => {
-    acc[address] = poolAddresses.reduce((poolAcc, pool, poolIndex) => {
-      const result = resultsDict[address][poolIndex];
-      if (result && result[balanceKey]) {
-        return (
-          poolAcc +
-          parseFloat(
-            formatUnits(result[balanceKey].toString(), decimals[poolIndex])
-          )
-        );
-      } else {
-        return poolAcc;
-      }
-    }, 0);
+function transformResults(
+  res: any[],
+  addresses: string[],
+  balanceKey: string,
+  decimals: number
+): { [address: string]: number } {
+  return res.reduce((acc: { [address: string]: number }, result, index) => {
+    const address = addresses[index % addresses.length];
+    if (!acc[address]) {
+      acc[address] = 0;
+    }
+
+    const amount = parseFloat(
+      formatUnits(result[balanceKey].toString(), decimals)
+    );
+    acc[address] += amount;
     return acc;
   }, {});
 }
 
 export async function strategy(
-  space,
-  network,
-  provider,
-  addresses,
-  options,
-  snapshot
-) {
+  space: string,
+  network: string,
+  provider: Provider,
+  addresses: string[],
+  options: {
+    lockedPoolAddresses: { address: string }[];
+    foundingInvestorPoolAddresses: { address: string }[];
+    pendingWithdrawalAddresses: { address: string }[];
+    symbol: string;
+    address: string;
+    decimals: number;
+  },
+  snapshot: number | string
+): Promise<{ [address: string]: number }> {
   const blockTag = typeof snapshot === 'number' ? snapshot : 'latest';
   const score = await erc20BalanceOfStrategy(
     space,
@@ -106,54 +110,37 @@ export async function strategy(
     })
   ]);
 
-  const transformResults = (res, addresses) => {
-    return res.reduce((acc, result, index) => {
-      const address = addresses[index % addresses.length];
-      if (!acc[address]) {
-        acc[address] = [];
-      }
-      acc[address].push(result);
-      return acc;
-    }, {});
-  };
-
-  const lockedPoolResults = transformResults(lockedPoolBalancesRes, addresses);
-  const foundingInvestorPoolResults = transformResults(
+  const lockedPoolScore = transformResults(
+    lockedPoolBalancesRes,
+    addresses,
+    'amount',
+    options.decimals
+  );
+  const foundingInvestorPoolScore = transformResults(
     foundingInvestorPoolBalancesRes,
-    addresses
+    addresses,
+    'amount',
+    options.decimals
   );
-  const pendingWithdrawalResults = transformResults(
+  const pendingWithdrawalScore = transformResults(
     pendingWithdrawalBalancesRes,
-    addresses
-  );
-
-  const lockedPoolScore = calculateScore(
-    lockedPoolResults,
-    options.lockedPoolAddresses,
-    'amount',
-    options.lockedPoolAddresses.map((item) => item.decimals)
-  );
-  const foundingInvestorPoolScore = calculateScore(
-    foundingInvestorPoolResults,
-    options.foundingInvestorPoolAddresses,
-    'amount',
-    options.foundingInvestorPoolAddresses.map((item) => item.decimals)
-  );
-  const pendingWithdrawalScore = calculateScore(
-    pendingWithdrawalResults,
-    options.pendingWithdrawalAddresses,
+    addresses,
     'total',
-    options.pendingWithdrawalAddresses.map((item) => item.decimals)
+    options.decimals
   );
 
-  const finalScore = Object.keys(score).reduce((acc, address) => {
-    acc[address] =
-      score[address] +
-      (lockedPoolScore[address] || 0) +
-      (foundingInvestorPoolScore[address] || 0) +
-      (pendingWithdrawalScore[address] || 0);
-    return acc;
-  }, {});
+  const finalScore = Object.keys(score).reduce(
+    (acc: { [address: string]: number }, address) => {
+      acc[address] = Math.trunc(
+        score[address] +
+          (lockedPoolScore[address] || 0) +
+          (foundingInvestorPoolScore[address] || 0) +
+          (pendingWithdrawalScore[address] || 0)
+      );
+      return acc;
+    },
+    {}
+  );
 
   return finalScore;
 }
